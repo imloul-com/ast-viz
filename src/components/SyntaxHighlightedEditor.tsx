@@ -10,6 +10,7 @@ interface SyntaxHighlightedEditorProps {
   onFocus?: () => void;
   onBlur?: () => void;
   selectedInterval?: { startIdx: number; endIdx: number } | null;
+  colorScheme?: ColorScheme;
 }
 
 interface HighlightRange {
@@ -19,208 +20,218 @@ interface HighlightRange {
   color: string;
 }
 
-// Map rule names to colors
-const getRuleColor = (ruleName: string): string => {
-  const lowerName = ruleName.toLowerCase();
-  
-  // Boolean/null literals - check exact values and patterns
-  if (lowerName === 'true' || lowerName === 'false' || lowerName === 'null' ||
-      lowerName.includes('true') || lowerName.includes('false') || 
-      lowerName.includes('null') || lowerName.includes('boolean') ||
-      lowerName.includes('bool')) {
-    return '#d946ef'; // Pink for boolean/null
+interface ColorScheme {
+  lexicalRule: string;      // Lowercase rules (tokens)
+  syntacticRule: string;    // Uppercase rules (structure)
+  literal: string;          // Terminal literals
+  punctuation: string;      // Single-char punctuation
+  default: string;          // Default fallback
+}
+
+// Default color scheme - grammar-agnostic
+const DEFAULT_COLOR_SCHEME: ColorScheme = {
+  lexicalRule: '#10b981',    // Green for lexical tokens
+  syntacticRule: '#3b82f6',  // Blue for syntactic rules
+  literal: '#f97316',        // Orange for literals
+  punctuation: '#94a3b8',    // Slate for punctuation
+  default: '#9ca3af',        // Gray for everything else
+};
+
+/**
+ * Grammar-agnostic color mapping based on Ohm.js conventions and AST structure.
+ * Uses structural analysis instead of pattern matching on rule names.
+ * 
+ * Ohm.js conventions:
+ * - Lowercase rules = lexical (tokens like 'identifier', 'number', 'string')
+ * - Uppercase rules = syntactic (structure like 'Expression', 'Statement')
+ * - Terminals = actual matched text
+ */
+const getRuleColor = (
+  node: ASTNode,
+  colorScheme: ColorScheme,
+  depth: number = 0
+): string => {
+  // Validate input
+  if (!node || typeof node !== 'object' || !node.name) {
+    return colorScheme.default;
   }
+
+  const ruleName = node.name;
+  const isLeaf = !node.children || node.children.length === 0;
   
-  // Keywords
-  if (lowerName.includes('keyword') || 
-      ['if', 'else', 'while', 'for', 'return', 'function', 'var', 'let', 'const'].includes(lowerName)) {
-    return '#d946ef'; // Pink for keywords
-  }
-  
-  // Check if it's a number (actual digits)
-  if (/^\d+(\.\d+)?$/.test(ruleName)) {
-    return '#f97316'; // Orange for numeric literals
-  }
-  
-  // Numbers - check for common patterns
-  if (lowerName.includes('number') || lowerName.includes('digit') || 
-      lowerName.includes('integer') || lowerName.includes('decimal') ||
-      lowerName.includes('num') || lowerName === 'priexpr' || 
-      (lowerName.includes('literal') && !lowerName.includes('string'))) {
-    return '#f97316'; // Orange for numbers
-  }
-  
-  // Check for quoted strings
-  if (ruleName.startsWith('"') && ruleName.endsWith('"')) {
-    return '#10b981'; // Green for string literals
-  }
-  
-  // Strings
-  if (lowerName.includes('string') || lowerName.includes('char') ||
-      lowerName.includes('text') || lowerName.includes('quoted')) {
-    return '#10b981'; // Green for strings
-  }
-  
-  // Check if it's a lowercase rule (lexical token in Ohm.js convention)
-  // Lowercase rules starting with specific prefixes get specific colors
-  if (/^[a-z]/.test(ruleName)) {
-    if (lowerName.includes('field') || lowerName.includes('token')) {
-      return '#10b981'; // Green for field/token types
+  // Handle terminal nodes specially
+  if (node.name === '_terminal' || isLeaf) {
+    // If we have a literal value, check if it's punctuation
+    if (node.value) {
+      const value = node.value.trim();
+      // Single character punctuation/operators
+      if (value.length === 1 && /[^\w\s]/.test(value)) {
+        return colorScheme.punctuation;
+      }
+      return colorScheme.literal;
     }
+    return colorScheme.default;
   }
   
-  // Identifiers/variables
-  if (lowerName.includes('identifier') || lowerName.includes('ident') || 
-      lowerName.includes('name') || lowerName.includes('variable') ||
-      lowerName.includes('property') || lowerName.includes('key')) {
-    return '#3b82f6'; // Blue for identifiers
+  // Use Ohm.js naming convention: lowercase = lexical, uppercase = syntactic
+  const firstChar = ruleName.charAt(0);
+  
+  if (/[a-z]/.test(firstChar)) {
+    // Lowercase rule = lexical token (identifier, number, string, keyword, etc.)
+    return colorScheme.lexicalRule;
+  } else if (/[A-Z]/.test(firstChar)) {
+    // Uppercase rule = syntactic structure (Expression, Statement, etc.)
+    return colorScheme.syntacticRule;
   }
   
-  // Operators and Expressions
-  if (lowerName.includes('operator') || lowerName.includes('op') ||
-      lowerName.includes('plus') || lowerName.includes('minus') ||
-      lowerName.includes('times') || lowerName.includes('divide') ||
-      lowerName.includes('addexpr') || lowerName.includes('mulexpr') ||
-      ['expr', 'expression'].includes(lowerName)) {
-    return '#8b5cf6'; // Purple for operators/expressions
-  }
-  
-  // Comments
-  if (lowerName.includes('comment')) {
-    return '#64748b'; // Gray for comments
-  }
-  
-  // Functions/Methods
-  if (lowerName.includes('function') || lowerName.includes('method') || lowerName.includes('call')) {
-    return '#eab308'; // Yellow for functions
-  }
-  
-  // Types/Classes/Objects
-  if (lowerName.includes('type') || lowerName.includes('class') || 
-      lowerName.includes('object') || lowerName.includes('array')) {
-    return '#06b6d4'; // Cyan for types
-  }
-  
-  // Punctuation - single characters or symbols
-  if (ruleName.length === 1 || lowerName.match(/^[^a-z0-9]+$/)) {
-    return '#94a3b8'; // Slate for punctuation
-  }
-  
-  // Letter sequences (unrecognized words) - treat as identifiers
-  if (/^[a-zA-Z]+$/.test(ruleName)) {
-    return '#cbd5e1'; // Light slate for unrecognized text
-  }
-  
-  // Default - slightly more visible
-  return '#9ca3af'; // Gray default
+  // Fallback for any unusual rule names
+  return colorScheme.default;
 };
 
-// Define which node types should be highlighted as complete units
-const isSemanticToken = (nodeName: string): boolean => {
-  const lowerName = nodeName.toLowerCase();
+/**
+ * Determines if a node should be highlighted as a complete semantic unit.
+ * Uses AST structure instead of string matching on names.
+ * 
+ * A node is semantic if:
+ * 1. It's a lexical rule (lowercase in Ohm.js) AND
+ * 2. It has children (meaning it matched something complex, not just a terminal)
+ * 
+ * This prevents highlighting individual characters within tokens.
+ */
+const isSemanticToken = (node: ASTNode): boolean => {
+  if (!node || !node.name) {
+    return false;
+  }
   
-  // These are meaningful tokens that should be highlighted as a whole
-  return (
-    lowerName.includes('string') ||
-    lowerName.includes('number') ||
-    lowerName.includes('identifier') ||
-    lowerName.includes('keyword') ||
-    lowerName.includes('comment') ||
-    lowerName.includes('boolean') ||
-    lowerName.includes('bool') ||
-    lowerName === 'true' ||
-    lowerName === 'false' ||
-    lowerName === 'null' ||
-    lowerName.includes('_true') ||
-    lowerName.includes('_false') ||
-    lowerName.includes('_null')
-  );
+  // Check if it's a lexical rule (starts with lowercase)
+  const isLexical = /^[a-z]/.test(node.name);
+  
+  // Check if it has children (it's not just a raw terminal)
+  const hasChildren = node.children && node.children.length > 0;
+  
+  // Lexical rules with children should be treated as complete tokens
+  // (e.g., 'identifier', 'number', 'string')
+  return isLexical && hasChildren;
 };
 
-// Extract highlight ranges from AST
-const extractHighlights = (node: ASTNode, ranges: HighlightRange[] = [], depth = 0): HighlightRange[] => {
+/**
+ * Extract highlight ranges from AST with comprehensive validation.
+ * This is the core highlighting logic that walks the AST tree.
+ */
+const extractHighlights = (
+  node: ASTNode,
+  colorScheme: ColorScheme,
+  ranges: HighlightRange[] = [],
+  depth: number = 0,
+  textLength: number = Infinity
+): HighlightRange[] => {
+  // Validate node
+  if (!node || typeof node !== 'object') {
+    console.warn('[SyntaxHighlighter] Invalid node encountered:', node);
+    return ranges;
+  }
+  
   // If no interval, skip this node but recurse into children
   if (!node.interval) {
-    if (node.children && node.children.length > 0) {
-      node.children.forEach(child => extractHighlights(child, ranges, depth + 1));
+    if (node.children && Array.isArray(node.children) && node.children.length > 0) {
+      node.children.forEach(child => 
+        extractHighlights(child, colorScheme, ranges, depth + 1, textLength)
+      );
     }
     return ranges;
   }
   
   const { startIdx, endIdx } = node.interval;
   
+  // Validate interval indices
+  if (typeof startIdx !== 'number' || typeof endIdx !== 'number') {
+    console.warn('[SyntaxHighlighter] Invalid interval indices:', node.interval, 'for node:', node.name);
+    return ranges;
+  }
+  
+  // Validate interval bounds
+  if (startIdx < 0 || endIdx < startIdx) {
+    console.warn('[SyntaxHighlighter] Invalid interval range:', startIdx, '-', endIdx, 'for node:', node.name);
+    return ranges;
+  }
+  
+  // Validate against text length
+  if (endIdx > textLength) {
+    console.warn('[SyntaxHighlighter] Interval exceeds text length:', endIdx, '>', textLength, 'for node:', node.name);
+    // Don't return - just clamp it
+  }
+  
   // Skip empty ranges
   if (startIdx === endIdx) {
-    if (node.children && node.children.length > 0) {
-      node.children.forEach(child => extractHighlights(child, ranges, depth + 1));
+    if (node.children && Array.isArray(node.children) && node.children.length > 0) {
+      node.children.forEach(child => 
+        extractHighlights(child, colorScheme, ranges, depth + 1, textLength)
+      );
     }
     return ranges;
   }
   
-  // If this is a semantic token (String, Number, etc.), highlight it as a whole unit
-  if (isSemanticToken(node.name)) {
+  // If this is a semantic token (lexical rule with children), highlight it as a whole unit
+  if (isSemanticToken(node)) {
     ranges.push({
-      start: startIdx,
-      end: endIdx,
+      start: Math.max(0, startIdx),
+      end: Math.min(endIdx, textLength),
       ruleName: node.name,
-      color: getRuleColor(node.name),
+      color: getRuleColor(node, colorScheme, depth),
     });
     return ranges; // Don't recurse into children for semantic tokens
   }
   
-  // If this is a leaf node, check if we should highlight it
+  // If this is a leaf node, highlight it
   if (!node.children || node.children.length === 0) {
-    // For terminal nodes, use their value
-    const effectiveName = node.name === '_terminal' ? 
-      (node.value || 'unknown') : 
-      node.name;
-    
     ranges.push({
-      start: startIdx,
-      end: endIdx,
-      ruleName: effectiveName,
-      color: getRuleColor(effectiveName),
+      start: Math.max(0, startIdx),
+      end: Math.min(endIdx, textLength),
+      ruleName: node.name || '_unknown',
+      color: getRuleColor(node, colorScheme, depth),
     });
     return ranges;
   }
   
   // For non-semantic parent nodes, recurse into children
-  node.children.forEach(child => extractHighlights(child, ranges, depth + 1));
+  if (Array.isArray(node.children)) {
+    node.children.forEach(child => 
+      extractHighlights(child, colorScheme, ranges, depth + 1, textLength)
+    );
+  }
   
   return ranges;
 };
 
-// Merge overlapping ranges (keep the most specific/smallest range)
+/**
+ * Merge overlapping ranges - optimized version.
+ * Strategy: Keep smaller/more specific ranges when they overlap with larger ranges.
+ * Complexity: O(n log n) due to sorting, then O(n) for linear scan.
+ */
 const mergeRanges = (ranges: HighlightRange[]): HighlightRange[] => {
   if (ranges.length === 0) return [];
   
-  // Sort by start position, then by length (shorter first)
-  const sorted = ranges.sort((a, b) => {
+  // Sort by start position, then by length (shorter first for priority)
+  const sorted = [...ranges].sort((a, b) => {
     if (a.start !== b.start) return a.start - b.start;
     return (a.end - a.start) - (b.end - b.start);
   });
   
   const merged: HighlightRange[] = [];
-  const covered = new Set<number>();
   
-  // Keep smaller ranges over larger ones when they overlap
   for (const range of sorted) {
-    let shouldAdd = true;
-    for (let i = range.start; i < range.end; i++) {
-      if (covered.has(i)) {
-        shouldAdd = false;
-        break;
-      }
-    }
+    // Check if this range overlaps with any already-merged range
+    const hasOverlap = merged.some(existing => 
+      !(range.end <= existing.start || range.start >= existing.end)
+    );
     
-    if (shouldAdd) {
+    if (!hasOverlap) {
       merged.push(range);
-      for (let i = range.start; i < range.end; i++) {
-        covered.add(i);
-      }
     }
+    // If there's overlap, skip this range (we keep the smaller one that was added first)
   }
   
+  // Final sort by start position
   return merged.sort((a, b) => a.start - b.start);
 };
 
@@ -275,6 +286,7 @@ export const SyntaxHighlightedEditor: React.FC<SyntaxHighlightedEditorProps> = (
   onFocus,
   onBlur,
   selectedInterval,
+  colorScheme = DEFAULT_COLOR_SCHEME,
 }) => {
   // Extract and merge highlight ranges from AST
   const highlightedContent = useMemo(() => {
@@ -282,10 +294,15 @@ export const SyntaxHighlightedEditor: React.FC<SyntaxHighlightedEditorProps> = (
       return null;
     }
     
-    const ranges = extractHighlights(ast);
-    const merged = mergeRanges(ranges);
-    return createHighlightedContent(value, merged);
-  }, [ast, value]);
+    try {
+      const ranges = extractHighlights(ast, colorScheme, [], 0, value.length);
+      const merged = mergeRanges(ranges);
+      return createHighlightedContent(value, merged);
+    } catch (error) {
+      console.error('[SyntaxHighlighter] Error during highlighting:', error);
+      return null; // Gracefully degrade to no highlighting
+    }
+  }, [ast, value, colorScheme]);
   
   return (
     <div className={`relative w-full h-full ${className}`}>

@@ -1,9 +1,8 @@
-import React, { useCallback, useState, useEffect, useRef, useMemo } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import CytoscapeComponent from 'react-cytoscapejs';
 import cytoscape from 'cytoscape';
 import dagre from 'cytoscape-dagre';
-import type { TreeNode, ASTNode } from '@/types/ast';
-import { optimizeTree, astToTree } from '@/lib/treeOptimizer';
+import type { TreeNode } from '@/types/ast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ZoomIn, ZoomOut, Maximize2, Minimize2, Shrink } from 'lucide-react';
@@ -13,26 +12,12 @@ cytoscape.use(dagre);
 
 interface TreeViewProps {
   data: TreeNode | null;
-  ast: ASTNode | null;
   optimizeEnabled: boolean;
+  fullNodeCount: number;
+  optimizedNodeCount: number;
   onToggleOptimize: () => void;
   onNodeClick?: (interval: { startIdx: number; endIdx: number } | null) => void;
 }
-
-// Count total nodes in a tree
-const countNodes = (tree: TreeNode | null): number => {
-  if (!tree) return 0;
-  
-  let count = 1; // Count the current node
-  
-  if (tree.children) {
-    for (const child of tree.children) {
-      count += countNodes(child);
-    }
-  }
-  
-  return count;
-};
 
 // Convert TreeNode to Cytoscape elements
 const convertToCytoscape = (
@@ -47,7 +32,8 @@ const convertToCytoscape = (
   // Determine if terminal based on whether it has children
   const hasChildren = tree.children && tree.children.length > 0;
   const isTerminal = !hasChildren;
-  const isCollapsed = tree.attributes?.type === 'collapsed';
+  // Check for both 'collapsed' and 'collapsed-terminal' types
+  const isCollapsed = tree.attributes?.type === 'collapsed' || tree.attributes?.type === 'collapsed-terminal';
   
   // Get node value for display below the node
   const nodeValue = tree.attributes?.value;
@@ -61,10 +47,15 @@ const convertToCytoscape = (
   
   if (isCollapsedPath && tree.name.includes(' → ')) {
     // For collapsed nodes, show only the final node name
-    // The color indicates it's collapsed, and hover shows the full path
+    // The color (purple) and bold font indicate it's collapsed
+    // Hover shows the full path for complete context
     const pathParts = tree.name.split(' → ');
+    const chainDepth = pathParts.length;
+    
+    // Show final node with subtle indicator of collapse depth
+    // e.g., "Term" but stores depth for potential badge/icon
     displayName = pathParts[pathParts.length - 1]; // Just the last node
-    isTruncated = pathParts.length > 1; // Will show full path on hover
+    isTruncated = chainDepth > 1; // Will show full path on hover
   } else {
     // For regular nodes, truncate long names
     const maxNameLength = 30;
@@ -93,6 +84,7 @@ const convertToCytoscape = (
   const height = 28;
   
   // Determine color: collapsed (purple) > terminal (teal) > branch (blue)
+  // Collapsed nodes (including collapsed-terminal) should always be purple
   const color = isCollapsed ? '#8b5cf6' : isTerminal ? '#06b6d4' : '#3b82f6';
   
   nodes.push({
@@ -109,6 +101,8 @@ const convertToCytoscape = (
       width,
       height,
       interval: tree.interval, // Store interval for source highlighting
+      // Store chain depth for potential UI enhancements (badges, etc.)
+      chainDepth: tree.name.includes(' → ') ? tree.name.split(' → ').length : 1,
     },
   });
 
@@ -131,7 +125,14 @@ const convertToCytoscape = (
   return { nodes, edges };
 };
 
-const TreeView: React.FC<TreeViewProps> = ({ data, ast, optimizeEnabled, onToggleOptimize, onNodeClick }) => {
+const TreeView: React.FC<TreeViewProps> = ({ 
+  data, 
+  optimizeEnabled, 
+  fullNodeCount, 
+  optimizedNodeCount, 
+  onToggleOptimize, 
+  onNodeClick 
+}) => {
   const [elements, setElements] = useState<any[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<{ name: string; fullName: string; value: string; fullValue: string } | null>(null);
@@ -147,35 +148,27 @@ const TreeView: React.FC<TreeViewProps> = ({ data, ast, optimizeEnabled, onToggl
   });
   const cyRef = useRef<any>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const isInitializedRef = useRef(false);
 
-  // Calculate node counts for both full and optimized trees
-  const { fullCount, optimizedCount } = useMemo(() => {
-    if (!ast) return { fullCount: 0, optimizedCount: 0 };
-    
-    const fullTree = astToTree(ast);
-    const optimizedTree = optimizeTree(ast);
-    
-    return {
-      fullCount: countNodes(fullTree),
-      optimizedCount: countNodes(optimizedTree),
-    };
-  }, [ast]);
-
-  // Current node count
-  const nodeCount = optimizeEnabled ? optimizedCount : fullCount;
+  // Use node counts from context (single source of truth)
+  const nodeCount = optimizeEnabled ? optimizedNodeCount : fullNodeCount;
   
   // Calculate compression percentage
-  const compressionPercent = fullCount > 0 ? Math.round(((fullCount - optimizedCount) / fullCount) * 100) : 0;
+  const compressionPercent = fullNodeCount > 0 
+    ? Math.round(((fullNodeCount - optimizedNodeCount) / fullNodeCount) * 100) 
+    : 0;
 
   // Convert tree data to Cytoscape format
   useEffect(() => {
     if (!data) {
       setElements([]);
+      isInitializedRef.current = false;
       return;
     }
 
     const { nodes, edges } = convertToCytoscape(data);
     setElements([...nodes, ...edges]);
+    isInitializedRef.current = false; // Reset flag when data changes
   }, [data]);
 
   const handleZoomIn = useCallback(() => {
@@ -260,11 +253,11 @@ const TreeView: React.FC<TreeViewProps> = ({ data, ast, optimizeEnabled, onToggl
             <CardDescription>
               {optimizeEnabled ? (
                 <span>
-                  Optimized tree • <strong>{nodeCount} nodes</strong> (from {fullCount}) • <strong className="text-green-600 dark:text-green-400">{compressionPercent}% compression</strong>
+                  Optimized tree • <strong>{nodeCount} nodes</strong> (from {fullNodeCount}) • <strong className="text-green-600 dark:text-green-400">{compressionPercent}% compression</strong>
                 </span>
               ) : (
                 <span>
-                  Full tree • <strong>{nodeCount} nodes</strong> (optimized: {optimizedCount})
+                  Full tree • <strong>{nodeCount} nodes</strong> (optimized: {optimizedNodeCount})
                 </span>
               )}
             </CardDescription>
@@ -302,6 +295,13 @@ const TreeView: React.FC<TreeViewProps> = ({ data, ast, optimizeEnabled, onToggl
             cy={(cy) => {
               cyRef.current = cy;
               
+              // Only initialize event handlers and layout once
+              if (isInitializedRef.current) {
+                return;
+              }
+              
+              isInitializedRef.current = true;
+              
               // Add click handler for nodes
               cy.on('tap', 'node', (event: any) => {
                 const node = event.target;
@@ -331,17 +331,23 @@ const TreeView: React.FC<TreeViewProps> = ({ data, ast, optimizeEnabled, onToggl
                 }
               });
               
-              // Add hover handler for truncated nodes
+              // Add hover handler for truncated nodes (including collapsed chains)
               cy.on('mouseover', 'node[isTruncated = true]', (event: any) => {
                 const node = event.target;
                 const nodeData = node.data();
                 const renderedPosition = node.renderedPosition();
                 
+                // For collapsed nodes, show full chain path with depth indicator
+                let tooltipText = nodeData.fullName;
+                if (nodeData.isCollapsed && nodeData.chainDepth > 1) {
+                  tooltipText = `${nodeData.fullName} (${nodeData.chainDepth} nodes collapsed)`;
+                }
+                
                 setTooltip({
                   visible: true,
                   x: renderedPosition.x,
                   y: renderedPosition.y - 30, // Position above the node
-                  text: nodeData.fullName,
+                  text: tooltipText,
                 });
               });
               

@@ -33,6 +33,7 @@ const BUILTIN_RULES = new Set([
 
 /**
  * Extract rule names from grammar text
+ * Matches both uppercase (structural) and lowercase (lexical) rules
  */
 export function extractRules(grammarText: string): string[] {
   const rules: string[] = [];
@@ -47,7 +48,8 @@ export function extractRules(grammarText: string): string[] {
     
     // Check if next line has '=' to identify rule definition
     const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
-    if (nextLine.startsWith('=') && /^[A-Z][a-zA-Z0-9_]*$/.test(line)) {
+    // Match both uppercase (structural) and lowercase (lexical) rule names
+    if (nextLine.startsWith('=') && /^[A-Za-z][a-zA-Z0-9_]*$/.test(line)) {
       rules.push(line);
     }
   }
@@ -57,6 +59,7 @@ export function extractRules(grammarText: string): string[] {
 
 /**
  * Parse rule alternatives and extract referenced rules
+ * Detects both uppercase (structural) and lowercase (lexical) rule references
  */
 function extractReferencesFromDefinition(definition: string, allRules: Set<string>): string[] {
   const references: string[] = [];
@@ -68,10 +71,11 @@ function extractReferencesFromDefinition(definition: string, allRules: Set<strin
   // Remove operators and special characters but keep rule names
   cleaned = cleaned.replace(/[=|+*?()~&]/g, ' ');
   
-  // Match word tokens that could be rule names (start with uppercase)
-  const tokens = cleaned.match(/[A-Z][a-zA-Z0-9_]*/g) || [];
+  // Match word tokens that could be rule names (both uppercase and lowercase)
+  const tokens = cleaned.match(/[A-Za-z][a-zA-Z0-9_]*/g) || [];
   
   for (const token of tokens) {
+    // Check if token is in our rule set (excluding Ohm.js built-ins)
     if (allRules.has(token) && !BUILTIN_RULES.has(token)) {
       if (!references.includes(token)) {
         references.push(token);

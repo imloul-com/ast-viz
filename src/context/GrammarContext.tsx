@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useCallback, useEffect, typ
 import type { ASTNode, TreeNode, GrammarExample } from '@/types/ast';
 import { parseWithGrammar } from '@/lib/parser';
 import { optimizeTree, astToTree } from '@/lib/treeOptimizer';
+import { decodeStateFromUrl, clearShareUrl } from '@/lib/shareUtils';
+import { useGrammarHistory } from '@/hooks/useGrammarHistory';
 
 interface GrammarContextType {
   grammar: string;
@@ -11,26 +13,92 @@ interface GrammarContextType {
   error: string | null;
   optimizeEnabled: boolean;
   collapsedRules: Set<string>;
+  fullNodeCount: number;
+  optimizedNodeCount: number;
+  canUndo: boolean;
+  canRedo: boolean;
   setGrammar: (value: string) => void;
   setProgramText: (value: string) => void;
   setOptimizeEnabled: (value: boolean) => void;
   toggleRuleCollapsed: (ruleId: string) => void;
   parseGrammar: () => boolean;
   loadExample: (example: GrammarExample) => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 const GrammarContext = createContext<GrammarContextType | undefined>(undefined);
 
+// Helper function to count nodes in a tree
+const countTreeNodes = (tree: TreeNode | null): number => {
+  if (!tree) return 0;
+  let count = 1;
+  if (tree.children) {
+    for (const child of tree.children) {
+      count += countTreeNodes(child);
+    }
+  }
+  return count;
+};
+
 export const GrammarProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [grammar, setGrammar] = useState('');
-  const [programText, setProgramText] = useState('');
+  // Check for shared state in URL on initialization
+  const sharedState = decodeStateFromUrl();
+  
+  const [grammar, setGrammarInternal] = useState(sharedState?.grammar || '');
+  const [programText, setProgramText] = useState(sharedState?.programText || '');
   const [ast, setAst] = useState<ASTNode | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [optimizeEnabled, setOptimizeEnabled] = useState(true);
   const [collapsedRules, setCollapsedRules] = useState<Set<string>>(new Set());
+  const [fullNodeCount, setFullNodeCount] = useState(0);
+  const [optimizedNodeCount, setOptimizedNodeCount] = useState(0);
+  
+  // Grammar history for undo/redo
+  const { canUndo, canRedo, undo: undoHistory, redo: redoHistory, pushHistory } = useGrammarHistory(grammar);
+  
+  // Clear the URL after loading shared state to prevent confusion
+  useEffect(() => {
+    if (sharedState) {
+      console.log('[GrammarContext] Loaded shared state from URL');
+      clearShareUrl();
+    }
+  }, []);
+
+  // Wrapped setGrammar with logging and history tracking
+  const setGrammar = useCallback((newGrammar: string, skipHistory = false) => {
+    console.log('[GrammarContext] setGrammar called');
+    console.log('  New grammar length:', newGrammar.length);
+    console.log('  First 50 chars:', newGrammar.substring(0, 50));
+    setGrammarInternal(newGrammar);
+    
+    // Push to history (will be debounced internally)
+    if (!skipHistory) {
+      pushHistory(newGrammar);
+    }
+  }, [pushHistory]);
+
+  // Undo grammar change
+  const undo = useCallback(() => {
+    const previousGrammar = undoHistory();
+    if (previousGrammar !== null) {
+      setGrammarInternal(previousGrammar);
+      console.log('✓ Undo successful');
+    }
+  }, [undoHistory]);
+
+  // Redo grammar change
+  const redo = useCallback(() => {
+    const nextGrammar = redoHistory();
+    if (nextGrammar !== null) {
+      setGrammarInternal(nextGrammar);
+      console.log('✓ Redo successful');
+    }
+  }, [redoHistory]);
 
   // Re-generate tree when optimization setting changes
+  // SINGLE SOURCE OF TRUTH: Only generate trees here, not in components
   useEffect(() => {
     if (ast) {
       const treeData = optimizeEnabled ? optimizeTree(ast) : astToTree(ast);
@@ -54,8 +122,19 @@ export const GrammarProvider: React.FC<{ children: ReactNode }> = ({ children })
     const result = parseWithGrammar(grammar, programText);
 
     if (result.success && result.ast) {
+      // Generate both trees ONCE for node counting
+      const fullTree = astToTree(result.ast);
+      const optimizedTree = optimizeTree(result.ast);
+      
+      // Calculate node counts
+      setFullNodeCount(countTreeNodes(fullTree));
+      setOptimizedNodeCount(countTreeNodes(optimizedTree));
+      
+      // Store AST (will trigger tree regeneration via useEffect)
       setAst(result.ast);
-      const treeData = optimizeEnabled ? optimizeTree(result.ast) : astToTree(result.ast);
+      
+      // Set the appropriate tree based on current optimization setting
+      const treeData = optimizeEnabled ? optimizedTree : fullTree;
       setTree(treeData);
       setError(null);
       return true;
@@ -78,8 +157,19 @@ export const GrammarProvider: React.FC<{ children: ReactNode }> = ({ children })
     setTimeout(() => {
       const result = parseWithGrammar(example.grammar, example.sampleInput);
       if (result.success && result.ast) {
+        // Generate both trees ONCE for node counting
+        const fullTree = astToTree(result.ast);
+        const optimizedTree = optimizeTree(result.ast);
+        
+        // Calculate node counts
+        setFullNodeCount(countTreeNodes(fullTree));
+        setOptimizedNodeCount(countTreeNodes(optimizedTree));
+        
+        // Store AST (will trigger tree regeneration via useEffect)
         setAst(result.ast);
-        const treeData = optimizeEnabled ? optimizeTree(result.ast) : astToTree(result.ast);
+        
+        // Set the appropriate tree based on current optimization setting
+        const treeData = optimizeEnabled ? optimizedTree : fullTree;
         setTree(treeData);
         setError(null);
       } else {
@@ -109,12 +199,18 @@ export const GrammarProvider: React.FC<{ children: ReactNode }> = ({ children })
     error,
     optimizeEnabled,
     collapsedRules,
+    fullNodeCount,
+    optimizedNodeCount,
+    canUndo,
+    canRedo,
     setGrammar,
     setProgramText,
     setOptimizeEnabled,
     toggleRuleCollapsed,
     parseGrammar,
     loadExample,
+    undo,
+    redo,
   };
 
   return (

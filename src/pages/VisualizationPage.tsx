@@ -5,11 +5,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import TreeView from '@/components/TreeView';
 import JsonView from '@/components/JsonView';
 import { SyntaxHighlightedEditor } from '@/components/SyntaxHighlightedEditor';
 import { useGrammar } from '@/context/GrammarContext';
-import { ArrowLeft, Braces, Network, Edit, FileText, Play, AlertCircle, PanelLeftClose, PanelLeftOpen, GripVertical, Zap, ZapOff, Loader2 } from 'lucide-react';
+import { Braces, Network, FileText, Play, AlertCircle, PanelLeftClose, PanelLeftOpen, GripVertical, Zap, ZapOff, Loader2 } from 'lucide-react';
 
 const VisualizationPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +24,8 @@ const VisualizationPage: React.FC = () => {
     setProgramText,
     parseGrammar,
     grammar,
+    fullNodeCount,
+    optimizedNodeCount,
   } = useGrammar();
 
   const [inputFocused, setInputFocused] = useState(false);
@@ -81,48 +84,7 @@ const VisualizationPage: React.FC = () => {
   const programLineCount = programText.split('\n').length;
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
-      {/* Header */}
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                onClick={() => navigate('/grammar/builder')}
-                className="gap-2"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Grammar
-              </Button>
-              
-              <div className="h-8 w-px bg-border" />
-              
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center">
-                  <Network className="h-6 w-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-green-600 to-teal-600 bg-clip-text text-transparent">
-                    AST Visualization
-                  </h1>
-                  <p className="text-xs text-muted-foreground">Test inputs and view interactive tree & JSON</p>
-                </div>
-              </div>
-            </div>
-
-            <Button
-              variant="outline"
-              onClick={() => navigate('/grammar/builder')}
-              className="gap-2"
-            >
-              <Edit className="h-4 w-4" />
-              Edit Grammar
-            </Button>
-          </div>
-        </div>
-      </header>
-
+    <>
       {/* Content - Resizable Split View */}
       <main className="flex-1 overflow-hidden">
         <PanelGroup direction="horizontal">
@@ -306,13 +268,16 @@ const VisualizationPage: React.FC = () => {
                     </Alert>
                     
                     <div className="flex-1 overflow-hidden">
-                      <TreeView
-                        data={tree}
-                        ast={ast}
-                        optimizeEnabled={optimizeEnabled}
-                        onToggleOptimize={handleToggleOptimize}
-                        onNodeClick={setSelectedInterval}
-                      />
+                      <ErrorBoundary fallbackTitle="Tree View Error">
+                        <TreeView
+                          data={tree}
+                          optimizeEnabled={optimizeEnabled}
+                          fullNodeCount={fullNodeCount}
+                          optimizedNodeCount={optimizedNodeCount}
+                          onToggleOptimize={handleToggleOptimize}
+                          onNodeClick={setSelectedInterval}
+                        />
+                      </ErrorBoundary>
                     </div>
                     {error && (
                       <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-yellow-50 dark:bg-yellow-950/50 border-2 border-yellow-400 dark:border-yellow-600 rounded-lg px-4 py-2 shadow-lg">
@@ -336,7 +301,9 @@ const VisualizationPage: React.FC = () => {
               <TabsContent value="json" className="h-full m-0">
                 {ast ? (
                   <div className="relative h-full">
-                    <JsonView data={ast} />
+                    <ErrorBoundary fallbackTitle="JSON View Error">
+                      <JsonView data={ast} />
+                    </ErrorBoundary>
                     {error && (
                       <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-yellow-50 dark:bg-yellow-950/50 border-2 border-yellow-400 dark:border-yellow-600 rounded-lg px-4 py-2 shadow-lg z-10">
                         <p className="text-xs text-yellow-900 dark:text-yellow-100 font-medium">
@@ -361,7 +328,7 @@ const VisualizationPage: React.FC = () => {
           </Panel>
         </PanelGroup>
       </main>
-    </div>
+    </>
   );
 };
 

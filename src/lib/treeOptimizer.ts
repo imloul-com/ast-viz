@@ -1,37 +1,52 @@
 import type { ASTNode, TreeNode } from '@/types/ast';
 
 /**
- * Clean AST by removing unnecessary nodes like _iter and _terminal wrappers
+ * Tree Optimizer - Simplifies AST for better visualization
+ * 
+ * PURPOSE:
+ * - Remove Ohm.js internal nodes (_iter, _terminal) that clutter the tree
+ * - Collapse linear chains of single-child nodes for readability
+ * - Hide lowercase lexical rules (tokens) that don't add structural value
+ * 
+ * STRATEGY:
+ * 1. Clean: Remove Ohm.js framework nodes (_iter, _terminal)
+ * 2. Collapse: Merge single-child chains (A → B → C becomes "A → B → C")
+ * 3. Filter: Hide lowercase leaf nodes (lexical tokens like 'space', 'digit')
+ */
+
+/**
+ * Clean AST by removing Ohm.js framework nodes
+ * 
+ * Removes:
+ * - _iter nodes: Iteration wrappers (e.g., for `rule+` or `rule*`)
+ * - _terminal nodes: Literal punctuation from grammar definitions
+ * 
+ * Strategy: Flatten _iter children into parent, skip _terminal entirely
  */
 function cleanAST(node: ASTNode): ASTNode | null {
-  // Remove ALL _iter nodes (they're just iteration wrappers)
-  if (node.name === '_iter') {
-    // If it has children, flatten them up to parent
+  // Skip Ohm.js internal nodes that should be removed
+  if (node.name === '_iter' || node.name === '_terminal') {
     return null;
   }
   
-  // Skip _terminal nodes - use their value in the parent
-  if (node.name === '_terminal') {
-    return null;
-  }
-  
-  // Recursively clean children and flatten
+  // Recursively clean children and flatten _iter nodes
   const cleanedChildren: ASTNode[] = [];
   
   for (const child of node.children) {
-    const cleaned = cleanAST(child);
-    
-    // If child was an _iter, its children are now null, so we need to collect them before cleaning
     if (child.name === '_iter') {
-      // Flatten _iter children directly
+      // Flatten _iter: add its children directly to parent
       for (const iterChild of child.children) {
         const cleanedIterChild = cleanAST(iterChild);
         if (cleanedIterChild) {
           cleanedChildren.push(cleanedIterChild);
         }
       }
-    } else if (cleaned) {
-      cleanedChildren.push(cleaned);
+    } else {
+      // Regular child: clean recursively
+      const cleaned = cleanAST(child);
+      if (cleaned) {
+        cleanedChildren.push(cleaned);
+      }
     }
   }
   
@@ -42,12 +57,26 @@ function cleanAST(node: ASTNode): ASTNode | null {
 }
 
 /**
- * Skip through lexical nodes to find the next structural node in a single-child chain
+ * Check if a node is a lowercase (lexical) rule
+ * 
+ * Ohm.js convention:
+ * - Uppercase rules (e.g., Expression, Statement) = structural nodes, shown in AST
+ * - Lowercase rules (e.g., identifier, number) = lexical tokens, hidden from AST
+ */
+function isLexicalNode(node: ASTNode): boolean {
+  return /^[a-z]/.test(node.name);
+}
+
+/**
+ * Skip through lexical nodes to find the next structural node
+ * 
+ * Used when traversing single-child chains to find meaningful nodes.
+ * Lexical nodes are intermediate parsing artifacts we want to hide.
  */
 function skipLexicalNodes(node: ASTNode): ASTNode {
   let current = node;
   
-  // Skip through any lexical (lowercase) nodes with single children
+  // Follow single-child lexical nodes until we find a structural node or end
   while (current.children.length === 1 && isLexicalNode(current)) {
     current = current.children[0];
   }
@@ -56,94 +85,124 @@ function skipLexicalNodes(node: ASTNode): ASTNode {
 }
 
 /**
- * Check if a node is part of a linear path (single child chain, should be collapsed)
+ * Determine if a node starts a linear path that should be collapsed
+ * 
+ * A linear path is a chain of single-child structural nodes like:
+ * - Short: Program → Statement (2 nodes)
+ * - Long: Program → Statement → Expression → Term (4 nodes)
+ * 
+ * We collapse these to: "Program → Statement" or "Program → ... → Term"
+ * This reduces visual clutter and makes the tree more readable.
+ * 
+ * We STOP collapsing when we hit:
+ * - A branching node (multiple children)
+ * 
+ * We ALLOW collapsing for:
+ * - Chains ending at leaf nodes (includes 2-node chains)
+ * - Chains of any length ≥ 2
  */
 function shouldCollapse(node: ASTNode): boolean {
-  // Stop collapsing if:
-  // - Node has no children (leaf)
-  // - Node has multiple children (branching point)
+  // Stop if leaf (nothing to collapse) or branching node
   if (node.children.length !== 1) {
     return false;
   }
   
-  // Skip through any lexical nodes to see if there's a structural node continuing the chain
+  // Look ahead: skip lexical nodes to find the next structural node
   const nextStructural = skipLexicalNodes(node.children[0]);
   
-  // If after skipping lexical nodes we find a structural node with a single child, continue collapsing
-  // If we find a leaf or branching node, stop
-  if (nextStructural.children.length === 0 || nextStructural.children.length > 1) {
+  // If next node is lexical, don't collapse
+  if (isLexicalNode(nextStructural)) {
     return false;
   }
   
-  // If the next node (after skipping lexical) is structural, continue the chain
-  if (!isLexicalNode(nextStructural)) {
-    return true;
+  // Stop if next node branches (has multiple children)
+  // But ALLOW if next node is a leaf (0 children) - this enables 2-node chains
+  if (nextStructural.children.length > 1) {
+    return false;
   }
   
-  return false;
+  // Debug logging for 2-node chains
+  if (nextStructural.children.length === 0) {
+    console.log(`🔍 2-node chain detected: "${node.name}" → "${nextStructural.name}" (leaf)`);
+  }
+  
+  // Collapse if:
+  // - Next node is a leaf (0 children) → 2-node chain like A → B
+  // - Next node has 1 child → longer chain like A → B → C
+  return true;
 }
 
 /**
- * Collapse linear paths in the tree, skipping lexical nodes
- * A linear path is a sequence of structural nodes, possibly separated by lexical nodes
- * This simplifies the tree by collapsing chains into a single node
+ * Collapse a linear path into a single node with combined name
+ * 
+ * Example:
+ * Input:  Program → Statement → Expression → Term (each with single child)
+ * Output: "Program → Statement → Expression → Term" (single collapsed node)
+ * 
+ * This makes deep single-child chains more readable and less cluttered.
  */
 function collapseLinearPath(node: ASTNode): { name: string; finalNode: ASTNode } {
   const path: string[] = [node.name];
   let current = node;
   
-  // Traverse down while we have single children, skipping lexical nodes
+  // Traverse down the single-child chain
   while (current.children.length === 1) {
     const child = current.children[0];
     
-    // Skip through lexical nodes
+    // Skip lexical nodes (we don't include them in the path name)
     const nextStructural = skipLexicalNodes(child);
     
-    // If we've reached the end (leaf or branching), stop
+    // Stop at leaf or branching node
     if (nextStructural.children.length === 0 || nextStructural.children.length > 1) {
       current = nextStructural;
+      // Add final structural node to path if it's not lexical
       if (!isLexicalNode(nextStructural)) {
         path.push(nextStructural.name);
       }
       break;
     }
     
-    // If the next structural node is also a single-child structural node, add it to the path
+    // Add structural node to path and continue
     if (!isLexicalNode(nextStructural)) {
       path.push(nextStructural.name);
       current = nextStructural;
     } else {
-      // We've hit a lexical leaf, stop here
+      // Reached a lexical leaf, stop
       current = nextStructural;
       break;
     }
   }
   
+  const collapsedName = path.join(' → ');
+  console.log(`✅ Collapsed: ${collapsedName} (${path.length} nodes, final has ${current.children.length} children)`);
+  
   return {
-    name: path.join(' → '),
+    name: collapsedName,
     finalNode: current,
   };
 }
 
 /**
- * Check if a node is a lowercase (lexical) rule
- */
-function isLexicalNode(node: ASTNode): boolean {
-  return /^[a-z]/.test(node.name);
-}
-
-/**
- * Filter and optimize children, hiding lowercase lexical nodes
+ * Recursively optimize children nodes
+ * 
+ * Filters out lowercase lexical leaf nodes (e.g., 'space', 'digit')
+ * These are parsing artifacts that don't add value to the visualization.
+ * 
+ * Strategy:
+ * - Skip lexical leaf nodes (lowercase with no children)
+ * - Recursively optimize all other children
  */
 function optimizeChildren(children: ASTNode[]): TreeNode[] {
   const optimized: TreeNode[] = [];
   
   for (const child of children) {
-    // Skip lowercase leaf nodes (they're lexical tokens, just formatting)
+    // Filter: Skip lowercase lexical leaf nodes
+    // These are tokens like 'space', 'digit', 'comma' that clutter the tree
     if (isLexicalNode(child) && child.children.length === 0) {
       continue;
     }
     
+    // Recursively optimize this child
     optimized.push(optimizeTree(child));
   }
   
@@ -152,9 +211,20 @@ function optimizeChildren(children: ASTNode[]): TreeNode[] {
 
 /**
  * Convert AST to optimized Tree structure for visualization
+ * 
+ * OPTIMIZATION STEPS:
+ * 1. Clean: Remove Ohm.js internal nodes (_iter, _terminal)
+ * 2. Collapse: Merge single-child chains for readability
+ * 3. Filter: Hide lowercase lexical leaf nodes
+ * 
+ * RESULT: A simplified tree that's easier to visualize and understand
+ * 
+ * Example:
+ * Before: Program → [Statement → [Expression → [Term → [Factor → [digit]]]]]
+ * After:  Program → Statement → Expression → Term → Factor
  */
 export function optimizeTree(ast: ASTNode): TreeNode {
-  // Clean the AST first
+  // Step 1: Clean Ohm.js framework nodes
   const cleaned = cleanAST(ast);
   if (!cleaned) {
     return {
@@ -163,7 +233,7 @@ export function optimizeTree(ast: ASTNode): TreeNode {
     };
   }
   
-  // If this is a leaf node, return it as-is
+  // Leaf node: return as terminal
   if (cleaned.children.length === 0) {
     return {
       name: cleaned.name,
@@ -175,38 +245,43 @@ export function optimizeTree(ast: ASTNode): TreeNode {
     };
   }
   
-  // If this starts a linear path, collapse it
+  // Step 2: Check if this starts a collapsible linear path
   if (shouldCollapse(cleaned)) {
     const { name, finalNode } = collapseLinearPath(cleaned);
     
-    // If the final node is a leaf, just return the collapsed path
+    // Collapsed path ends at leaf (terminal node)
+    // Example: "Program → Statement → Expression → Term" with no children
+    // This will be rendered as a purple (collapsed) terminal node
     if (finalNode.children.length === 0) {
       return {
         name,
         attributes: {
           value: finalNode.value,
-          type: 'collapsed-terminal',
+          type: 'collapsed-terminal', // Special type for collapsed leaf nodes
         },
         interval: finalNode.interval,
       };
     }
     
-    // If the final node has children, recursively optimize them (filtering lowercase)
+    // Collapsed path has children: recursively optimize them
+    // Example: "Program → Statement → Expression" with children
+    // This will be rendered as a purple (collapsed) branch node
     return {
       name,
       attributes: {
         value: finalNode.value,
-        type: 'collapsed',
+        type: 'collapsed', // Type for collapsed branch nodes
       },
       interval: finalNode.interval,
       children: optimizeChildren(finalNode.children),
     };
   }
   
-  // Node has multiple children, keep it and optimize each child (filtering lowercase)
+  // Step 3: Branching node - optimize children and filter lexical leaves
   return {
     name: cleaned.name,
     attributes: {
+      // Truncate long values for readability
       value: cleaned.value && cleaned.value.length < 50 ? cleaned.value : undefined,
       type: 'branch',
     },
@@ -217,10 +292,16 @@ export function optimizeTree(ast: ASTNode): TreeNode {
 
 /**
  * Convert AST to non-optimized tree (for comparison/debugging)
- * Still filters out lowercase lexical rules for consistency
+ * 
+ * Provides a "raw" view of the AST with minimal processing:
+ * - Removes Ohm.js internal nodes (_iter, _terminal)
+ * - Filters lowercase lexical leaf nodes
+ * - NO collapsing of single-child chains
+ * 
+ * Use this when you want to see the full structure without optimization.
  */
 export function astToTree(ast: ASTNode): TreeNode {
-  // Clean the AST first
+  // Clean Ohm.js internal nodes
   const cleaned = cleanAST(ast);
   if (!cleaned) {
     return {
@@ -229,7 +310,7 @@ export function astToTree(ast: ASTNode): TreeNode {
     };
   }
   
-  // Filter out lowercase lexical leaf nodes
+  // Recursively convert children, filtering out lexical leaf nodes
   const filteredChildren = cleaned.children
     .filter(child => !(isLexicalNode(child) && child.children.length === 0))
     .map(child => astToTree(child));

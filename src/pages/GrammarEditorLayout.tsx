@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,23 +11,33 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ArrowRight, Eye, Code2, Sparkles, Lightbulb, CheckCircle2, Wand2, AlertCircle, Network, BookOpen, Zap } from 'lucide-react';
+import { ArrowRight, Code2, Sparkles, Lightbulb, CheckCircle2, Wand2, AlertCircle, Network, BookOpen, Zap, Share2, Copy, Check, Undo2, Redo2 } from 'lucide-react';
 import { useGrammar } from '@/context/GrammarContext';
 import { exampleGrammars } from '@/data/examples';
 import { validateGrammar } from '@/lib/parser';
 import { GrammarTutorial } from '@/components/GrammarTutorial';
+import { encodeStateToUrl } from '@/lib/shareUtils';
+import { Input } from '@/components/ui/input';
 
 const GrammarEditorLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const {
     grammar,
+    programText,
     error,
     loadExample,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
   } = useGrammar();
 
   const [grammarValidation, setGrammarValidation] = useState<{ valid: boolean; error?: string } | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [copied, setCopied] = useState(false);
 
   // Validate grammar in real-time
   useEffect(() => {
@@ -58,6 +69,26 @@ const GrammarEditorLayout: React.FC = () => {
     }
   };
 
+  const handleShare = () => {
+    const url = encodeStateToUrl({
+      grammar,
+      programText: programText || undefined,
+    });
+    setShareUrl(url);
+    setShowShareModal(true);
+    setCopied(false);
+  };
+
+  const handleCopyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy URL:', error);
+    }
+  };
+
   const grammarLineCount = grammar.split('\n').length;
 
   // Define navigation items
@@ -68,50 +99,72 @@ const GrammarEditorLayout: React.FC = () => {
     { path: '/grammar/suggestions', label: 'Suggestions', icon: Zap },
   ];
 
+  // Render header actions via portal
+  const headerActions = document.getElementById('header-actions');
+
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
-      {/* Header */}
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                <Eye className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  AST Visualizer
-                </h1>
-                <p className="text-sm text-muted-foreground">Define your Ohm.js grammar</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={() => setShowTutorial(true)}
-                size="lg"
-                variant="outline"
-                className="gap-2"
-              >
-                <BookOpen className="h-5 w-5" />
-                Tutorial
-              </Button>
-              <Button
-                onClick={handleContinue}
-                size="lg"
-                className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                disabled={!grammar.trim()}
-              >
-                Continue to Visualize
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </div>
+    <>
+      {/* Portal: Render actions into header */}
+      {headerActions && createPortal(
+        <>
+          <div className="flex items-center gap-1 mr-2 border-r pr-2">
+            <Button
+              onClick={undo}
+              size="sm"
+              variant="ghost"
+              className="gap-1"
+              disabled={!canUndo}
+              title="Undo (Cmd/Ctrl+Z)"
+            >
+              <Undo2 className="h-4 w-4" />
+              Undo
+            </Button>
+            <Button
+              onClick={redo}
+              size="sm"
+              variant="ghost"
+              className="gap-1"
+              disabled={!canRedo}
+              title="Redo (Cmd/Ctrl+Shift+Z)"
+            >
+              <Redo2 className="h-4 w-4" />
+              Redo
+            </Button>
           </div>
-        </div>
-      </header>
+          <Button
+            onClick={() => setShowTutorial(true)}
+            size="sm"
+            variant="ghost"
+            className="gap-2"
+          >
+            <BookOpen className="h-4 w-4" />
+            Tutorial
+          </Button>
+          <Button
+            onClick={handleShare}
+            size="sm"
+            variant="ghost"
+            className="gap-2"
+            disabled={!grammar.trim()}
+          >
+            <Share2 className="h-4 w-4" />
+            Share
+          </Button>
+          <Button
+            onClick={handleContinue}
+            size="sm"
+            className="gap-2 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 shadow-lg shadow-purple-500/20"
+            disabled={!grammar.trim()}
+          >
+            Visualize
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        </>,
+        headerActions
+      )}
 
       {/* Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto flex flex-col">
         <div className="container mx-auto px-4 py-4 space-y-4">
           {/* Error Alert */}
           {error && (
@@ -218,11 +271,82 @@ const GrammarEditorLayout: React.FC = () => {
             </CardContent>
           </Card>
         </div>
-      </main>
 
-      {/* Tutorial Modal */}
-      {showTutorial && <GrammarTutorial onClose={() => setShowTutorial(false)} />}
-    </div>
+        {/* Tutorial Modal */}
+        {showTutorial && <GrammarTutorial onClose={() => setShowTutorial(false)} />}
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl border-2 shadow-2xl">
+            <CardHeader className="border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
+                    <Share2 className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle>Share Your Grammar</CardTitle>
+                    <CardDescription>
+                      Share a snapshot of your grammar with others
+                    </CardDescription>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Shareable Link</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={shareUrl}
+                    readOnly
+                    className="font-mono text-sm"
+                    onClick={(e) => e.currentTarget.select()}
+                  />
+                  <Button
+                    onClick={handleCopyUrl}
+                    variant={copied ? "default" : "outline"}
+                    className="gap-2"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-4 w-4" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <Alert>
+                <Sparkles className="h-4 w-4" />
+                <AlertDescription>
+                  This creates a snapshot of your current grammar{programText ? ' and program text' : ''}. 
+                  Recipients can view and make their own edits, but changes won't sync between users.
+                  All data is encoded in the URL - nothing is stored on a server.
+                </AlertDescription>
+              </Alert>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  onClick={() => setShowShareModal(false)}
+                  variant="outline"
+                >
+                  Close
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      </main>
+    </>
   );
 };
 

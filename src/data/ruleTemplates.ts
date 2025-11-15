@@ -8,6 +8,7 @@ export interface RuleTemplate {
   ruleName: string;
   alternatives: string[];
   icon: string;
+  dependencies?: RuleTemplate[]; // Templates that should be added along with this one
 }
 
 export const ruleTemplates: RuleTemplate[] = [
@@ -41,6 +42,16 @@ export const ruleTemplates: RuleTemplate[] = [
   },
 
   // Strings
+  // Note: stringChar is defined first as a dependency
+  {
+    id: 'string-char',
+    name: 'String Character',
+    description: 'Character inside a string with escape support',
+    category: 'string',
+    ruleName: 'stringChar',
+    alternatives: ['~("\\"" | "\\\\") any', '"\\\\" any'],
+    icon: '📝',
+  },
   {
     id: 'string-double',
     name: 'String (Double Quotes)',
@@ -49,6 +60,7 @@ export const ruleTemplates: RuleTemplate[] = [
     ruleName: 'String',
     alternatives: ['"\\\"" stringChar* "\\""'],
     icon: '📝',
+    // Dependencies will be resolved by reference after array is fully defined
   },
   {
     id: 'string-single',
@@ -58,15 +70,7 @@ export const ruleTemplates: RuleTemplate[] = [
     ruleName: 'String',
     alternatives: ['\'\\\'\' stringChar* "\\\'"'],
     icon: '📝',
-  },
-  {
-    id: 'string-char',
-    name: 'String Character',
-    description: 'Character inside a string with escape support',
-    category: 'string',
-    ruleName: 'stringChar',
-    alternatives: ['~("\\"" | "\\\\") any', '"\\\\" any'],
-    icon: '📝',
+    // Dependencies will be resolved by reference after array is fully defined
   },
 
   // Identifiers
@@ -203,6 +207,26 @@ export const ruleTemplates: RuleTemplate[] = [
     icon: '🔑',
   },
 ];
+
+// Set up dependencies after templates are defined
+const stringCharTemplate = ruleTemplates.find(t => t.id === 'string-char');
+const stringDoubleTemplate = ruleTemplates.find(t => t.id === 'string-double');
+const stringsSingleTemplate = ruleTemplates.find(t => t.id === 'string-single');
+const binaryExprTemplate = ruleTemplates.find(t => t.id === 'binary-expr');
+const operatorTemplate = ruleTemplates.find(t => t.id === 'operator');
+
+// String templates depend on stringChar
+if (stringDoubleTemplate && stringCharTemplate) {
+  stringDoubleTemplate.dependencies = [stringCharTemplate];
+}
+if (stringsSingleTemplate && stringCharTemplate) {
+  stringsSingleTemplate.dependencies = [stringCharTemplate];
+}
+
+// BinaryExpr depends on Operator (Term is user-defined)
+if (binaryExprTemplate && operatorTemplate) {
+  binaryExprTemplate.dependencies = [operatorTemplate];
+}
 
 export const templatesByCategory = {
   number: ruleTemplates.filter(t => t.category === 'number'),
