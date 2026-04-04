@@ -9,7 +9,9 @@ import GrammarSuggestionsPage from '@/pages/GrammarSuggestionsPage';
 import VisualizationPage from '@/pages/VisualizationPage';
 
 function App() {
-  const basename = new URL(document.baseURI).pathname.replace(/\/$/, '') || '/';
+  const basename = document.querySelector('base')
+    ? new URL(document.baseURI).pathname.replace(/\/$/, '') || '/'
+    : '/';
 
   return (
     <ErrorBoundary fallbackTitle="Application Error">
