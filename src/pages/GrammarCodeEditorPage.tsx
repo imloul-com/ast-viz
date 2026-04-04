@@ -19,7 +19,7 @@ const GrammarCodeEditorPage: React.FC = () => {
   const grammarText = getGrammarAsText();
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+    <div className="flex flex-col min-h-0">
       <EnhancedCodeEditor
         value={grammarText}
         onChange={(value) => setGrammarFromText(value)}

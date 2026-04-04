@@ -105,6 +105,7 @@ const GrammarEditorLayout: React.FC = () => {
     { path: '/grammar/dependencies', label: 'Dependencies', icon: Network },
     { path: '/grammar/suggestions', label: 'Suggestions', icon: Zap },
   ];
+  const isCodeTab = location.pathname === '/grammar/code';
 
   const headerActions = document.getElementById('header-actions');
 
@@ -200,7 +201,7 @@ const GrammarEditorLayout: React.FC = () => {
             </Select>
           </div>
 
-          <Card className={`flex-1 flex flex-col overflow-hidden min-h-0 border transition-colors ${
+          <Card className={`${isCodeTab ? 'w-full h-fit' : 'flex-1 min-h-0'} flex flex-col overflow-hidden border transition-colors ${
             grammarValidation?.valid ? 'border-good/50' :
             grammarValidation?.error ? 'border-bad/50' : ''
           }`}>
@@ -219,7 +220,7 @@ const GrammarEditorLayout: React.FC = () => {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="pt-2 flex-1 flex flex-col overflow-hidden min-h-0 gap-3 px-3 sm:px-6">
+            <CardContent className={`pt-2 ${isCodeTab ? '' : 'flex-1 min-h-0'} flex flex-col overflow-hidden gap-3 px-3 sm:px-6`}>
               <div className="flex border-b flex-none">
                 {navItems.map((item) => {
                   const isActive = location.pathname === item.path;
@@ -246,7 +247,7 @@ const GrammarEditorLayout: React.FC = () => {
                 })}
               </div>
 
-              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+              <div className={`${isCodeTab ? '' : 'flex-1 min-h-0'} flex flex-col overflow-hidden`}>
                 <Outlet />
               </div>
 

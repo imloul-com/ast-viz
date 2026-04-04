@@ -53,7 +53,7 @@ export const EnhancedCodeEditor: React.FC<EnhancedCodeEditorProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-h-0 gap-2">
+    <div className="flex flex-col min-h-0 gap-2">
       <div className="flex gap-2 items-center flex-none">
         <Button
           variant="outline"
@@ -80,13 +80,14 @@ export const EnhancedCodeEditor: React.FC<EnhancedCodeEditorProps> = ({
         </span>
       </div>
 
-      <div className={`flex-1 min-h-0 rounded-md border-2 overflow-hidden transition-colors ${
+      <div className={`rounded-md border-2 overflow-hidden transition-colors ${
         focused ? 'border-primary shadow-md' : 'border-input'
       }`}>
         <CodeMirror
           ref={editorRef}
           value={value}
-          height="100%"
+          height="auto"
+          maxHeight="calc(100vh - 280px)"
           theme={isDark ? darkTheme : lightTheme}
           extensions={extensions}
           onChange={onChange}
