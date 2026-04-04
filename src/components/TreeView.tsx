@@ -5,8 +5,13 @@ import dagre from 'cytoscape-dagre';
 import type { TreeNode } from '@/types/ast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ZoomIn, ZoomOut, Maximize2, Minimize2, Shrink, X } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, Shrink } from 'lucide-react';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
+import { convertToCytoscape } from '@/components/tree-view/treeViewUtils';
+import { createTreeStylesheet } from '@/components/tree-view/treeViewStyles';
+import { TreeLegend } from '@/components/tree-view/TreeLegend';
+import { TreeTooltip } from '@/components/tree-view/TreeTooltip';
+import { SelectedNodePanel } from '@/components/tree-view/SelectedNodePanel';
 
 cytoscape.use(dagre);
 
@@ -18,93 +23,6 @@ interface TreeViewProps {
   onToggleOptimize: () => void;
   onNodeClick?: (interval: { startIdx: number; endIdx: number } | null) => void;
 }
-
-const convertToCytoscape = (
-  tree: TreeNode,
-  parentId: string | null = null,
-  nodes: any[] = [],
-  edges: any[] = [],
-  idCounter = { value: 0 }
-): { nodes: any[]; edges: any[] } => {
-  const id = `node-${idCounter.value++}`;
-  
-  const hasChildren = tree.children && tree.children.length > 0;
-  const isTerminal = !hasChildren;
-  const isCollapsed = tree.attributes?.type === 'collapsed' || tree.attributes?.type === 'collapsed-terminal';
-  const nodeValue = tree.attributes?.value;
-  
-  let displayName: string;
-  let isTruncated = false;
-  
-  const isCollapsedPath = isCollapsed || tree.name.includes(' → ');
-  
-  if (isCollapsedPath && tree.name.includes(' → ')) {
-    const pathParts = tree.name.split(' → ');
-    const chainDepth = pathParts.length;
-    displayName = pathParts[pathParts.length - 1];
-    isTruncated = chainDepth > 1;
-  } else {
-    const maxNameLength = 30;
-    isTruncated = tree.name.length > maxNameLength;
-    displayName = isTruncated 
-      ? tree.name.substring(0, maxNameLength - 3) + '...' 
-      : tree.name;
-  }
-  
-  let displayValue = '';
-  let fullValue = '';
-  if (nodeValue !== undefined && nodeValue !== null) {
-    const valueStr = String(nodeValue);
-    fullValue = valueStr;
-    const maxValueLength = 40;
-    displayValue = valueStr.length > maxValueLength 
-      ? valueStr.substring(0, maxValueLength - 3) + '...'
-      : valueStr;
-  }
-  
-  const charWidth = 6;
-  const padding = 16;
-  const width = Math.max(displayName.length * charWidth + padding, 50);
-  const height = 28;
-  
-  const color = isCollapsed ? '#4caf82' : isTerminal ? '#7a9ab5' : '#a87a3a';
-  
-  nodes.push({
-    data: {
-      id,
-      label: displayName,
-      fullName: tree.name,
-      isTruncated,
-      valueLabel: displayValue,
-      fullValue: fullValue,
-      isTerminal,
-      isCollapsed,
-      color,
-      width,
-      height,
-      interval: tree.interval,
-      chainDepth: tree.name.includes(' → ') ? tree.name.split(' → ').length : 1,
-    },
-  });
-
-  if (parentId) {
-    edges.push({
-      data: {
-        id: `edge-${parentId}-${id}`,
-        source: parentId,
-        target: id,
-      },
-    });
-  }
-
-  if (tree.children) {
-    tree.children.forEach((child) => {
-      convertToCytoscape(child, id, nodes, edges, idCounter);
-    });
-  }
-
-  return { nodes, edges };
-};
 
 
 const TreeView: React.FC<TreeViewProps> = ({ 
@@ -143,73 +61,7 @@ const TreeView: React.FC<TreeViewProps> = ({
     isInitializedRef.current = false;
   }, [data]);
 
-  const stylesheet = useMemo(() => [
-    {
-      selector: 'node',
-      style: {
-        'background-color': 'data(color)',
-        'label': 'data(label)',
-        'width': 'data(width)',
-        'height': 'data(height)',
-        'shape': 'roundrectangle',
-        'text-valign': 'center',
-        'text-halign': 'center',
-        'color': '#ffffff',
-        'font-size': '12px',
-        'font-weight': 500,
-        'text-wrap': 'none',
-        'text-max-width': '150px',
-        'border-width': 1,
-        'border-color': isDark ? '#242430' : '#d5d0c6',
-        'cursor': 'pointer',
-      },
-    },
-    {
-      selector: 'node:active',
-      style: {
-        'overlay-color': '#e8613a',
-        'overlay-opacity': 0.3,
-        'overlay-padding': 4,
-      },
-    },
-    {
-      selector: 'node[valueLabel]',
-      style: {
-        'source-label': 'data(valueLabel)',
-        'source-text-offset': 25,
-        'source-text-background-color': isDark ? '#141210' : '#f0ede6',
-        'source-text-background-opacity': 0.95,
-        'source-text-background-padding': '3px',
-        'source-text-background-shape': 'roundrectangle',
-        'source-text-color': isDark ? '#e8e6e0' : '#1c1a16',
-        'font-size': '10px',
-      },
-    },
-    {
-      selector: 'node[isTerminal = true]',
-      style: {
-        'font-size': '11px',
-        'font-weight': 400,
-      },
-    },
-    {
-      selector: 'node[isCollapsed = true]',
-      style: {
-        'font-weight': 600,
-      },
-    },
-    {
-      selector: 'edge',
-      style: {
-        'width': 1.5,
-        'line-color': isDark ? '#8a8880' : '#7a756d',
-        'target-arrow-color': isDark ? '#8a8880' : '#7a756d',
-        'target-arrow-shape': 'triangle',
-        'curve-style': 'bezier',
-        'arrow-scale': 0.8,
-      },
-    },
-  ], [isDark]);
+  const stylesheet = useMemo(() => createTreeStylesheet(isDark), [isDark]);
 
   const handleZoomIn = useCallback(() => {
     if (cyRef.current) {
@@ -415,67 +267,9 @@ const TreeView: React.FC<TreeViewProps> = ({
           />
         </div>
         
-        {tooltip.visible && (
-          <div
-            className="absolute z-50 pointer-events-none bg-background/95 border text-foreground px-3 py-2 rounded text-xs font-mono max-w-lg"
-            style={{
-              left: `${tooltip.x}px`,
-              top: `${tooltip.y}px`,
-              transform: 'translate(-50%, -100%)',
-              wordBreak: 'break-word',
-            }}
-          >
-            {tooltip.text}
-          </div>
-        )}
-        
-        {selectedNode && (
-          <div className="absolute bottom-4 left-4 bg-background/95 border px-4 py-3 rounded-lg max-w-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="text-xs text-muted-foreground mb-1">Selected Node</div>
-                <div className="font-mono text-sm font-medium text-foreground break-all">
-                  {selectedNode.fullName}
-                </div>
-                {selectedNode.value !== '(no value)' && (
-                  <div className="mt-1.5">
-                    <div className="text-xs text-muted-foreground mb-0.5">Value:</div>
-                    <div className="font-mono text-sm text-foreground bg-muted px-2 py-1 rounded break-all">
-                      {selectedNode.fullValue}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setSelectedNode(null)}
-                className="h-6 w-6 flex-shrink-0"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-        )}
-        
-        <div className="absolute top-4 right-4 text-xs text-muted-foreground bg-background/90 px-3 py-2 rounded border">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded bg-[#a87a3a]" />
-              <span>Branch</span>
-            </div>
-            {optimizeEnabled && (
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-[#4caf82]" />
-                <span>Collapsed</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded bg-[#7a9ab5]" />
-              <span>Terminal</span>
-            </div>
-          </div>
-        </div>
+        <TreeTooltip {...tooltip} />
+        <SelectedNodePanel node={selectedNode} onClose={() => setSelectedNode(null)} />
+        <TreeLegend optimizeEnabled={optimizeEnabled} />
       </CardContent>
     </Card>
   );

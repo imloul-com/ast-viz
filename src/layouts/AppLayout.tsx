@@ -1,5 +1,5 @@
 import React from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ArrowLeft, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/hooks/useTheme';
@@ -27,7 +27,6 @@ const AstLogo: React.FC<{ className?: string }> = ({ className }) => (
 
 const AppLayout: React.FC = () => {
   const location = useLocation();
-  const navigate = useNavigate();
   const { theme, toggle } = useTheme();
   
   const isVisualizePage = location.pathname === '/visualize';
@@ -56,13 +55,15 @@ const AppLayout: React.FC = () => {
                 <>
                   <div className="h-5 w-px bg-border shrink-0" />
                   <Button
+                    asChild
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigate('/grammar/code')}
                     className="gap-1 hd:gap-2 text-muted-foreground hover:text-foreground px-1 hd:px-3"
                   >
-                    <ArrowLeft className="h-4 w-4 shrink-0" />
-                    <span className="hidden hd:inline">Back to Editor</span>
+                    <Link to="/grammar/code">
+                      <ArrowLeft className="h-4 w-4 shrink-0" />
+                      <span className="hidden hd:inline">Back to Editor</span>
+                    </Link>
                   </Button>
                 </>
               )}

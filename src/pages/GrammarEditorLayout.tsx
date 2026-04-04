@@ -1,8 +1,7 @@
 import React, { useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, Outlet, NavLink, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -10,24 +9,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ArrowRight, AlertCircle, Network, Share2, Copy, Check, Undo2, Redo2, Zap, Code2, BookOpen } from 'lucide-react';
+import { AlertCircle, Network, Zap, Code2 } from 'lucide-react';
 import { useGrammar } from '@/context/GrammarContext';
 import { exampleGrammars } from '@/data/examples';
 import { validateGrammar } from '@/lib/parser';
 import { GrammarTutorial } from '@/components/GrammarTutorial';
 import { encodeStateToUrl } from '@/lib/shareUtils';
-import { Input } from '@/components/ui/input';
+import { GrammarHeaderActions } from '@/pages/components/GrammarHeaderActions';
+import { ShareGrammarDialog } from '@/pages/components/ShareGrammarDialog';
 
 const GrammarEditorLayout: React.FC = () => {
-  const navigate = useNavigate();
   const location = useLocation();
   const {
     grammar,
@@ -69,13 +61,6 @@ const GrammarEditorLayout: React.FC = () => {
     }
   };
 
-  const handleContinue = () => {
-    const grammarText = getGrammarAsText();
-    if (grammarValidation?.valid || grammarText.trim()) {
-      navigate('/visualize');
-    }
-  };
-
   const handleShare = () => {
     const grammarText = getGrammarAsText();
     const url = encodeStateToUrl({
@@ -112,62 +97,15 @@ const GrammarEditorLayout: React.FC = () => {
   return (
     <>
       {headerActions && createPortal(
-        <>
-          <div className="flex items-center gap-1 hd:mr-2 hd:border-r hd:pr-2">
-            <Button
-              onClick={undo}
-              size="sm"
-              variant="ghost"
-              className="gap-1 px-2 hd:px-3"
-              disabled={!canUndo}
-              title="Undo (Cmd/Ctrl+Z)"
-            >
-              <Undo2 className="h-4 w-4 shrink-0" />
-              <span className="hidden hd:inline">Undo</span>
-            </Button>
-            <Button
-              onClick={redo}
-              size="sm"
-              variant="ghost"
-              className="gap-1 px-2 hd:px-3"
-              disabled={!canRedo}
-              title="Redo (Cmd/Ctrl+Shift+Z)"
-            >
-              <Redo2 className="h-4 w-4 shrink-0" />
-              <span className="hidden hd:inline">Redo</span>
-            </Button>
-          </div>
-          <Button
-            onClick={() => setShowTutorial(true)}
-            size="sm"
-            variant="ghost"
-            className="gap-1 px-2 hd:px-3"
-            title="Tutorial"
-          >
-            <BookOpen className="h-4 w-4 shrink-0" />
-            <span className="hidden hd:inline">Tutorial</span>
-          </Button>
-          <Button
-            onClick={handleShare}
-            size="sm"
-            variant="ghost"
-            className="gap-1.5 px-2 hd:px-3"
-            disabled={!grammarText.trim()}
-            title="Share"
-          >
-            <Share2 className="h-4 w-4 shrink-0" />
-            <span className="hidden hd:inline">Share</span>
-          </Button>
-          <Button
-            onClick={handleContinue}
-            disabled={!grammarText.trim()}
-            className="gap-1.5 px-3 hd:px-4 font-semibold"
-            title="Visualize"
-          >
-            <span className="hidden hd:inline">Visualize</span>
-            <ArrowRight className="h-4 w-4 shrink-0" />
-          </Button>
-        </>,
+        <GrammarHeaderActions
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          onOpenTutorial={() => setShowTutorial(true)}
+          onShare={handleShare}
+          canShare={Boolean(grammarText.trim())}
+        />,
         headerActions
       )}
 
@@ -263,50 +201,13 @@ const GrammarEditorLayout: React.FC = () => {
 
         {showTutorial && <GrammarTutorial onClose={() => setShowTutorial(false)} />}
 
-        <Dialog open={showShareModal} onOpenChange={setShowShareModal}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Share Grammar</DialogTitle>
-              <DialogDescription>
-                Share a snapshot of your grammar with others.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Shareable Link</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={shareUrl}
-                    readOnly
-                    className="font-mono text-sm"
-                    onClick={(e) => e.currentTarget.select()}
-                  />
-                  <Button
-                    onClick={handleCopyUrl}
-                    variant={copied ? "default" : "outline"}
-                    className="gap-1.5"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="h-4 w-4" />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        Copy
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                All data is encoded in the URL -- nothing is stored on a server.
-              </p>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ShareGrammarDialog
+          open={showShareModal}
+          onOpenChange={setShowShareModal}
+          shareUrl={shareUrl}
+          copied={copied}
+          onCopyUrl={handleCopyUrl}
+        />
       </main>
     </>
   );
