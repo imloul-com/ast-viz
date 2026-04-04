@@ -4,7 +4,7 @@ This repo is now ready for declarative Cloudflare deployment from GitHub.
 
 ## What was added
 
-- Root `wrangler.toml` for this app (`worker-ast-viz`).
+- Root `wrangler.toml` for this app.
 - GitHub Actions workflow at `.github/workflows/deploy-cloudflare-pages.yml`.
 
 ## 1) Configure GitHub secrets
@@ -24,9 +24,9 @@ The workflow runs:
 
 1. `npm ci`
 2. `npm run build`
-3. `wrangler pages deploy dist --project-name worker-ast-viz --branch main`
+3. `wrangler pages deploy dist --project-name <wrangler.toml[name]> --branch main`
 
-This gives you a deployable Cloudflare Pages project named `worker-ast-viz`.
+This gives you a deployable Cloudflare Pages project named `<wrangler.toml[name]>`.
 
 ## 3) Mount this app on your single domain
 
@@ -39,7 +39,7 @@ Set your real domain in the route:
 
 The included route maps:
 
-- `https://example.com/ast-viz/*` -> this app (`worker-ast-viz`)
+- `https://example.com/ast-viz/*` -> this app (`ast-viz`)
 
 Prefix stripping should be handled in your router-worker code, so this app does not need a Vite `base` rewrite.
 
