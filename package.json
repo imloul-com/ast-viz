@@ -9,9 +9,7 @@
     "build:sitemap": "node scripts/generate-sitemap.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:grammar": "tsx test-typescript-grammar.ts",
-    "cf:deploy": "npm run build && npx wrangler pages deploy dist",
-    "cf:deploy:prod": "npm run build && npx wrangler pages deploy dist --branch main"
+    "test:grammar": "tsx test-typescript-grammar.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",

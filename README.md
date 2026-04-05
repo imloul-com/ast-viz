@@ -36,15 +36,13 @@ npm run preview
 
 ## Deployment
 
-This repo includes Cloudflare Pages deployment config:
+This repo is deployment-agnostic:
 
-- `wrangler.toml`
-- `.github/workflows/deploy-cloudflare-pages.yml`
-
-See `cloudflare/DEPLOYMENT.md` for setup details.
+- `.github/workflows/deploy-cloudflare-pages.yml` builds and publishes a versioned static artifact to GHCR.
+- Cloudflare deployment is orchestrated from `cloudflare-infra`.
 
 Routing/domain ownership note:
-- This repo only deploys the app artifact.
+- This repo only builds the app artifact.
 - Domain routing, path mounts, and cross-app infra are managed in `cloudflare-infra`.
 
 ## Notes

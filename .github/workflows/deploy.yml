@@ -1,0 +1,72 @@
+name: AST Viz CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ast-viz-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          SITEMAP_BASE_URL: https://ast-viz.pages.dev
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ast-viz-dist
+          path: dist
+
+      - name: Package build output
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p release
+          tar -czf release/site.tar.gz -C dist .
+
+      - name: Setup ORAS
+        if: github.event_name != 'pull_request'
+        uses: oras-project/setup-oras@v1
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+
+      - name: Publish static artifact to GHCR
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/ast-viz-static"
+          short_sha="${GITHUB_SHA::12}"
+          if [ "${GITHUB_REF}" = "refs/heads/dev" ]; then
+            channel_tag="dev-latest"
+          else
+            channel_tag="prod-latest"
+          fi
+          sha_tag="sha-${short_sha}"
+          oras push "${image}:${channel_tag}" release/site.tar.gz:application/vnd.myportfolio.static.layer.v1+tar
+          oras push "${image}:${sha_tag}" release/site.tar.gz:application/vnd.myportfolio.static.layer.v1+tar
